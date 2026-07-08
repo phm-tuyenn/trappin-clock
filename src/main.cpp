@@ -3,9 +3,16 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <RTClib.h>
+#include <OneButton.h>
 #include <math.h>
 
 #include "icon.h"
+
+#pragma region variables
+// encoder pin
+#define CLK_PIN 25
+#define DT_PIN 26
+#define SW_PIN 27
 
 // oled config
 #define SCREEN_WIDTH 128
@@ -18,7 +25,7 @@ Adafruit_SH1106G display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);
 RTC_DS3231 rtc;
 
 // date & format
-char daysOfTheWeek[7][12] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 enum ALIGN {LEFT, CENTER, RIGHT};
 
 // status
@@ -30,6 +37,17 @@ bool isLocking = false;
 RTC_DATA_ATTR DateTime sleepTime = DateTime(2026, 7, 7, 8, 0, 0);
 RTC_DATA_ATTR DateTime wakeTime = DateTime(2026, 7, 7, 8, 0, 0);
 DateTime now;
+
+// encoder count
+volatile int counter = 0;
+int lastStateCLK;
+
+// button
+OneButton button = OneButton(SW_PIN, true, true);
+
+unsigned long systemTime = 0;
+
+#pragma endregion
 
 // oled display print()
 void print(String text = "", uint8_t size = 1, ALIGN align = LEFT) {
@@ -75,6 +93,34 @@ void drawStatusIcons() {
   }
 }
 
+// encoder count
+void IRAM_ATTR rotary_encoder() {
+    int currentStateCLK = digitalRead(CLK_PIN);
+    if (currentStateCLK != lastStateCLK) {
+        if (digitalRead(DT_PIN) != currentStateCLK) {
+            counter++;
+        } else {
+            counter--;
+        }
+    }
+    lastStateCLK = currentStateCLK;
+}
+
+// short press handling
+void handleShortPress() {
+  if (!isEditing) {
+    isAlarming = false;
+  } else {
+    // switch to another term to edit
+  }
+}
+
+// long press handling
+void handleLongPress() {
+  // switch to edit mode
+  isEditing = !isEditing;
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -96,13 +142,25 @@ void setup() {
     Serial.println("reset time because rtc lost power");
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
-
+  
+  // buzzer
   pinMode(2, OUTPUT);
+
+  // knob encoder
+  pinMode(CLK_PIN, INPUT);
+  pinMode(DT_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(CLK_PIN), rotary_encoder, CHANGE);
+  
+  // button
+  button.attachClick(handleShortPress);
+  button.attachLongPressStart(handleLongPress);
+  button.setPressMs(1000);
+
+  systemTime = millis();
 }
 
 void loop() {
   now = rtc.now();
-
   // getting each time field in individual variables
   // adding a leading zero when needed
   String yearStr = String(now.year(), DEC);
@@ -114,10 +172,10 @@ void loop() {
   String dayOfWeek = daysOfTheWeek[now.dayOfTheWeek()];
 
   // complete time string
-  String date = yearStr + "-" + monthStr + "-" + dayStr;
+  String date = dayStr + "-" + monthStr + "-" + yearStr;
   String time = hourStr + ":" + minuteStr + ":" + secondStr;
 
-  // print the complete formatted time
+  // print time
   display.clearDisplay();
   display.setCursor(0, 6);
 
@@ -126,15 +184,31 @@ void loop() {
 
   println(time, 2, CENTER);
 
+  // tempurature
   display.setCursor(0, 6);
   println(String(rtc.getTemperature(), 1) + " C", 1, RIGHT);
   display.drawCircle(116, 8, 2, SH110X_WHITE);
 
-  isAlarming = (now.hour() == wakeTime.hour() && now.minute() == wakeTime.minute());
-  digitalWrite(2, isAlarming);
+  // alarm toggle
+  if (now.hour() == wakeTime.hour() && now.minute() == wakeTime.minute() && now.second() == 0) {
+    isAlarming = true;
+  }
+  // create interrupted buzzer effect
+  if (millis() - systemTime <= 200) 
+    digitalWrite(2, isAlarming);
+  else {
+    digitalWrite(2, LOW);
+    systemTime = millis();
+  }
   
-  drawStatusIcons();
+  // set current time using sync-time.py
+  if (Serial.available()) {
+    DateTime resetTime = DateTime(Serial.parseInt(), Serial.parseInt(), Serial.parseInt(), Serial.parseInt(), Serial.parseInt(), Serial.parseInt());
+    rtc.adjust(resetTime);
+    Serial.println("ok");
+  } 
 
+  drawStatusIcons();
   display.display();
-  delay(950);
+  button.tick();
 }
