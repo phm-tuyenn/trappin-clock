@@ -43,6 +43,7 @@ char editOrder[10][13]   = {"Year", "Month", "Day", "Hour", "Minute", "Second", 
 unsigned int daysOfMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 int editPos = -1;
 bool editSecondOnce = false;
+int editSuccessState = 0;
 
 // encoder count
 volatile int counter = 0;
@@ -52,7 +53,7 @@ int lastStateCLK;
 // button
 OneButton button = OneButton(SW_PIN, true, true);
 
-unsigned long systemTime = 0;
+unsigned long buzzerTime = 0, successNotifyTime = 0;
 
 #pragma endregion
 
@@ -210,7 +211,6 @@ void handleShortPress() {
       editSecondOnce = false;
     }
     counter = 0;
-    systemTime = millis();
   }
 }
 
@@ -223,6 +223,7 @@ void handleLongPress() {
     editedSleepTime = sleepTime;
     editedWakeTime = wakeTime;
     counter = 0;
+    editSuccessState = 0;
   }
   else {
     isEditing = false;
@@ -236,8 +237,9 @@ void handleLongPress() {
     editTime = TimeSpan(0);
     editPos = -1;
     counter = 0;
+    editSuccessState = 1;
+    successNotifyTime = millis();
   }
-  systemTime = millis();
 }
 
 // handle double click
@@ -250,6 +252,8 @@ void handleDoubleClick() {
     editedWakeTime = wakeTime;
     editPos = -1;
     counter = 0;
+    editSuccessState = -1;
+    successNotifyTime = millis();
   }
 }
 #pragma endregion
@@ -279,7 +283,9 @@ void setup() {
   pinMode(CLOCK_INTERRUPT_PIN, INPUT_PULLUP);
   sleepTime = rtc.getAlarm1();
   wakeTime = rtc.getAlarm2();
-  
+  rtc.clearAlarm(1);
+  rtc.clearAlarm(2);
+
   // buzzer
   pinMode(2, OUTPUT);
 
@@ -294,7 +300,7 @@ void setup() {
   button.attachDoubleClick(handleDoubleClick);
   button.setPressMs(1000);
 
-  systemTime = millis();
+  buzzerTime = millis();
 }
 
 void loop() {
@@ -314,7 +320,12 @@ void loop() {
 
     // editing status or weekday
     if (!isEditing) {
-      println(dayOfWeek + "\n");
+      if (editSuccessState == 0 || millis() - successNotifyTime > 1000) {
+        println(dayOfWeek + "\n");
+      } else {
+        if (editSuccessState == 1) println("Edit success!\n");
+        else println("Abort change!\n");
+      }
     } else {
       String order = editOrder[editPos];
       println("Editing: " + order + "\n");
@@ -356,7 +367,7 @@ void loop() {
   if (rtc.alarmFired(1)) { // sleep alarm
     rtc.clearAlarm(1);
     isLocking = true;
-    systemTime = millis();
+    buzzerTime = millis();
   } else if (rtc.alarmFired(2)) { // wake alarm
     rtc.clearAlarm(2);
     isLocking = false;
@@ -366,16 +377,16 @@ void loop() {
   // buzzer manage
   if (isAlarming) {
     // create interrupted buzzer effect
-    if (millis() - systemTime <= 200) {
+    if (millis() - buzzerTime <= 200) {
       digitalWrite(2, HIGH);
     } else {
       digitalWrite(2, LOW);
-      systemTime = millis();
+      buzzerTime = millis();
     }
   } else {
     // buzzing when entering locking mode or switch in edit mode
     // disable buzzer after .1 sec from locking
-    if (millis() - systemTime >= 100) digitalWrite(2, LOW);
+    if (millis() - buzzerTime >= 100) digitalWrite(2, LOW);
     else digitalWrite(2, HIGH);
   } 
   
