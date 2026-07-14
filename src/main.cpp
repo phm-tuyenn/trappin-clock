@@ -35,7 +35,6 @@ enum ALIGN {LEFT, CENTER, RIGHT};
 bool isAlarming = false;
 bool isEditing = false;
 bool isLocking = false;
-bool isSleeping = false;
 
 // time util
 DateTime now, editedNow, editedSleepTime, editedWakeTime;
@@ -91,20 +90,19 @@ void println(String text = "", uint8_t size = 1, ALIGN align = LEFT) {
 
 // draw status icons
 void drawStatusIcons() {
-  if (isEditing) {
-    display.drawBitmap(114, 18, editIcon, 12, 12, SH110X_WHITE);
-  } else if (isLocking) {
+  if (isLocking) {
     display.drawBitmap(114, 18, lockIcon, 12, 12, SH110X_WHITE);
   } else {
     display.drawBitmap(114, 18, unlockIcon, 12, 12, SH110X_WHITE);
   }
 
-  if (isSleeping) {
-    display.drawBitmap(100, 18, sleepIcon, 12, 12, SH110X_WHITE);
+  if (isAlarming) {
+    display.drawBitmap(100, 18, alarmIcon, 12, 12, SH110X_WHITE);
   }
 
-  if (isAlarming && (!isSleeping || !isEditing)) {
-    display.drawBitmap(100, 18, alarmIcon, 12, 12, SH110X_WHITE);
+  if (isEditing) {
+    if (!isAlarming) display.drawBitmap(100, 18, editIcon, 12, 12, SH110X_WHITE);
+    else display.drawBitmap(86, 18, editIcon, 12, 12, SH110X_WHITE);
   }
 }
 
@@ -256,8 +254,6 @@ void handleDoubleClick() {
     counter = 0;
     editSuccessState = -1;
     successNotifyTime = millis();
-  } else {
-    if (!isSleeping) isLocking = !isLocking;
   }
 }
 #pragma endregion
@@ -370,13 +366,11 @@ void loop() {
   // alarm
   if (rtc.alarmFired(1)) { // sleep alarm
     rtc.clearAlarm(1);
-    isSleeping = true;
     isLocking = true;
     buzzerTime = millis();
   } else if (rtc.alarmFired(2)) { // wake alarm
     rtc.clearAlarm(2);
     isLocking = false;
-    isSleeping = false;
     isAlarming = true;
   }
 
