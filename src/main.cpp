@@ -265,6 +265,11 @@ void handleDoubleClick() {
     if (!isSleeping) isLocking = !isLocking;
   }
 }
+
+// for compare hour & min
+bool timeIsSmallerOrEqual(DateTime time1, DateTime time2) {
+  return ((time1.hour() < time2.hour()) || (time1.hour() == time2.hour() && (time1.minute() <= time2.minute())));
+}
 #pragma endregion
 
 void setup() {
@@ -294,6 +299,12 @@ void setup() {
   wakeTime = rtc.getAlarm2();
   rtc.clearAlarm(1);
   rtc.clearAlarm(2);
+  // set sleep if resetted while sleeping
+  now = rtc.now();
+  if (timeIsSmallerOrEqual(sleepTime, now) || timeIsSmallerOrEqual(now, wakeTime)) {
+    isSleeping = true;
+    isLocking = true;
+  }
 
   // buzzer
   pinMode(2, OUTPUT);
