@@ -4,6 +4,7 @@
 #include <Adafruit_SH110X.h>
 #include <RTClib.h>
 #include <OneButton.h>
+#include <ESP32Servo.h>
 #include <math.h>
 
 #include "icon.h"
@@ -34,7 +35,8 @@ enum ALIGN {LEFT, CENTER, RIGHT};
 // status
 bool isAlarming = false;
 bool isEditing = false;
-bool isLocking = false;
+bool isLocking = true;
+bool isSleeping = false;
 
 // time util
 DateTime now, editedNow, editedSleepTime, editedWakeTime;
@@ -52,6 +54,11 @@ int lastStateCLK;
 
 // button
 OneButton button = OneButton(SW_PIN, true, true);
+
+// servo
+Servo servo;
+#define openPos 0
+#define closePos 180
 
 unsigned long buzzerTime = 0, successNotifyTime = 0;
 
@@ -90,19 +97,19 @@ void println(String text = "", uint8_t size = 1, ALIGN align = LEFT) {
 
 // draw status icons
 void drawStatusIcons() {
-  if (isLocking) {
-    display.drawBitmap(114, 18, lockIcon, 12, 12, SH110X_WHITE);
+  if (!isEditing) {
+    if (isLocking) {
+      display.drawBitmap(114, 18, lockIcon, 12, 12, SH110X_WHITE);
+    } else {
+      display.drawBitmap(114, 18, unlockIcon, 12, 12, SH110X_WHITE);
+    }
+    if (isAlarming) {
+      display.drawBitmap(100, 18, alarmIcon, 12, 12, SH110X_WHITE);
+    } else if (isSleeping) {
+      display.drawBitmap(100, 18, sleepIcon, 12, 12, SH110X_WHITE);
+    }
   } else {
-    display.drawBitmap(114, 18, unlockIcon, 12, 12, SH110X_WHITE);
-  }
-
-  if (isAlarming) {
-    display.drawBitmap(100, 18, alarmIcon, 12, 12, SH110X_WHITE);
-  }
-
-  if (isEditing) {
-    if (!isAlarming) display.drawBitmap(100, 18, editIcon, 12, 12, SH110X_WHITE);
-    else display.drawBitmap(86, 18, editIcon, 12, 12, SH110X_WHITE);
+    display.drawBitmap(114, 18, editIcon, 12, 12, SH110X_WHITE);
   }
 }
 
@@ -254,6 +261,8 @@ void handleDoubleClick() {
     counter = 0;
     editSuccessState = -1;
     successNotifyTime = millis();
+  } else {
+    if (!isSleeping) isLocking = !isLocking;
   }
 }
 #pragma endregion
@@ -299,6 +308,9 @@ void setup() {
   button.attachLongPressStart(handleLongPress);
   button.attachDoubleClick(handleDoubleClick);
   button.setPressMs(1000);
+
+  // servo
+  servo.attach(13);
 
   buzzerTime = millis();
 }
@@ -367,9 +379,11 @@ void loop() {
   if (rtc.alarmFired(1)) { // sleep alarm
     rtc.clearAlarm(1);
     isLocking = true;
+    isSleeping = true;
     buzzerTime = millis();
   } else if (rtc.alarmFired(2)) { // wake alarm
     rtc.clearAlarm(2);
+    isSleeping = false;
     isLocking = false;
     isAlarming = true;
   }
@@ -389,6 +403,13 @@ void loop() {
     if (millis() - buzzerTime >= 100) digitalWrite(2, LOW);
     else digitalWrite(2, HIGH);
   } 
+
+  // servo manage
+  if (isLocking) {
+    servo.write(closePos);
+  } else {
+    servo.write(openPos);
+  }
   
   // set current time using sync-time.py
   if (Serial.available()) {
